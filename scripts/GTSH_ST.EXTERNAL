@@ -1,0 +1,80 @@
+#! /bin/bash
+#@@@@@@@@@@@@@@@PLEASE CHECK BEFORE USE THIS SCRIPT@@@@@@@@@@@@@@@@
+
+###################################################################
+#                                                                 #
+#   YOU CAN USE ANY SCRIPTS OR CODES FOR REALIZING THIS PURPOSE   #
+#              BE CAREFUL WHAT YOU ARE DOING                      #
+#                 IT IS NOT A BLACK-BOX                           #
+#                                                                 #
+###################################################################
+#                                                                 #
+#                        MLEBF Package                            #
+#                                                                 #
+#                        Wen-Kai  Chen                            #
+#                       Dr. Ganglong Cui                          #
+#                                                                 #
+###################################################################
+
+if [ -d TMP ]; then
+  cd TMP
+else
+  mkdir TMP
+  cd TMP
+  cp -rf ../template/* ./.
+fi
+
+N_SINGLETS=2
+STATE=`gawk "{print $1}" ../GTSH.CURRENT.STATE`
+
+# CHOOSE WHICH MLEBF CALCULATION TO RUN TO GET THE CURRENT STATE GRADIENTS
+if [ ${STATE} -le ${N_SINGLETS}  ]; then
+  cd S0
+  python3 dynamics.py 2>/dev/null > log
+  if [ $? -ne 0 ]; then
+    echo ""
+    echo "@@@ MLEBF_s0 is not correctly finished"
+    echo ""
+    echo "error in running MLEBF" > ../../GTSH.STOP
+  fi
+
+  cd ../S1
+  python3 dynamics.py 2>/dev/null > log
+  if [ $? -ne 0 ]; then
+    echo ""
+    echo "@@@ MLEBF_s1 is not correctly finished"
+    echo ""
+    echo "error in running MLEBF" > ../../GTSH.STOP
+  fi
+  cd ..
+fi
+
+# EXTRACT ENERGIES
+cat ./S0/tot_ene.ene >  mlebf.energy
+cat ./S1/tot_ene.ene >> mlebf.energy
+# EXTRACT GRADIENT
+cat ./S0/tot_grad.grad > mlebf.s0.grad
+cat ./S1/tot_grad.grad > mlebf.s1.grad
+cat mlebf.s0.grad >  mlebf.grad
+echo " "          >> mlebf.grad
+cat mlebf.s1.grad >> mlebf.grad
+# MLEBF HESSIAN APPROXIMATION METHOD via hessian matrix
+./NAC_mlebf.py singlet S0 S1 mlebf.nac.s.12
+
+# GO TO UP DIRECTORTY
+cd ..
+
+# GTSH ENERGY FORMAT
+cat ./TMP/mlebf.energy      > ./GTSH.ENERGY
+
+# GTSH CURRENT STATE GRADIENTS
+C_ST=`echo "${STATE} - 1 " | bc`
+cat ./TMP/mlebf.s${C_ST}.grad > ./GTSH.GRAD
+
+#GTSH NACM FORMAT
+cat ./TMP/mlebf.nac.s.12 > ./GTSH.NACM.SS
+
+#END
+#################
+
+

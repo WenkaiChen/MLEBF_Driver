@@ -1,0 +1,371 @@
+#! /bin/bash
+####################################################
+####################################################
+###                                              ###
+### This is the shell script for mbe calculation ###
+###            written by Chen, Wen-Kai          ###
+###                                              ###
+###    This script if suitable for MBE_driver    ###
+###           Package written by Wen-Kai         ###
+###                                              ###
+###                 ATTENTION!!!                 ###
+###         THIS IS NOT A BLACK BOX!!!           ###
+###  MAKE SURE THAT YOU KNOW WHAT YOU ARE DOING  ###
+###                                              ###
+####################################################
+####################################################
+
+# ENVIROMENT VARIABLES for some Quantum Chemistry Packages
+# Openmolcas
+export MOLCAS=/opt/OpenMolcasSet/openmolcas_mpi
+export CPUS=1
+export MOLCASMEM=1600MB
+export MOLCAS_MOLDEN=ON
+export MOLCASDISK=3000MB
+export PATH=/usr/local/bin:$PATH
+
+################### OPENMOLCAS #################
+cat > MOLCAS_MID_1 << EOF # ee
+
+ basis
+ BASIS_SET_VALUE
+
+ basdir=./
+
+ group
+ nosym
+
+ ricd
+
+ xfield
+ NBGC_VALUE   Angstrom
+EOF
+cat > MOLCAS_MID_2 << EOF # no_ee
+
+ basis
+ BASIS_SET_VALUE
+
+ basdir=./
+
+ group
+ nosym
+
+ ricd
+EOF
+cat > MOLCAS_END_1 << EOF
+END OF INPUT
+
+&SEWARD
+ DoAnalytical
+END OF INPUT
+
+&SCF
+END OF INPUT
+
+&RASSCF
+ title
+ cas64_dim
+
+ nactel
+ 6 0 0
+
+ inactive
+ 18
+
+ ras2
+ 4
+
+ symmetry
+ 1
+
+ spin
+ 1
+
+ ciroot= TOT_VAL TOT_VAL 1
+
+ lumorb
+
+ rlxroot
+ CUR_VAL
+END OF INPUT
+
+&ALASKA
+ pnew
+END OF INPUT
+EOF
+cat > MOLCAS_END_2 << EOF
+END OF INPUT
+
+&SEWARD
+ DoAnalytical
+END OF INPUT
+
+&SCF
+END OF INPUT
+
+&RASSCF
+ title
+ cas64_mono
+
+ nactel
+ 6 0 0
+
+ inactive
+ 13
+
+ ras2
+ 4
+
+ symmetry
+ 1
+
+ spin
+ 1
+
+ ciroot= TOT_VAL TOT_VAL 1
+
+ lumorb
+
+ rlxroot
+ CUR_VAL
+END OF INPUT
+
+&ALASKA
+ pnew
+END OF INPUT
+EOF
+cat > MOLCAS_END_3 << EOF
+END OF INPUT
+
+&SEWARD
+ DoAnalytical
+END OF INPUT
+
+&SCF
+END OF INPUT
+
+&RASSCF
+ title
+ cas64_mono
+
+ nactel
+ 6 0 0
+
+ inactive
+ 23
+
+ ras2
+ 4
+
+ symmetry
+ 1
+
+ spin
+ 1
+
+ ciroot= TOT_VAL TOT_VAL 1
+
+ lumorb
+
+ rlxroot
+ CUR_VAL
+END OF INPUT
+
+&ALASKA
+ pnew
+END OF INPUT
+EOF
+
+cat > MOLCAS_END_4 << EOF
+END OF INPUT
+
+&SEWARD
+ DoAnalytical
+END OF INPUT
+
+&SCF
+END OF INPUT
+
+&RASSCF
+ title
+ cas64_dim
+
+ nactel
+ 6 0 0
+
+ inactive
+ 18
+
+ ras2
+ 4
+
+ symmetry
+ 1
+
+ spin
+ 1
+
+ ciroot= TOT_VAL TOT_VAL 1
+
+ lumorb
+
+ rlxroot
+ CUR_VAL
+END OF INPUT
+
+&ALASKA
+ pnew
+END OF INPUT
+
+&MCKINLEY
+ Perturbation
+ Hessian
+ SHOWHessian
+END OF INPUT
+EOF
+cat > MOLCAS_END_5 << EOF
+END OF INPUT
+
+&SEWARD
+ DoAnalytical
+END OF INPUT
+
+&SCF
+END OF INPUT
+
+&RASSCF
+ title
+ cas64_mono
+
+ nactel
+ 6 0 0
+
+ inactive
+ 13
+
+ ras2
+ 4
+
+ symmetry
+ 1
+
+ spin
+ 1
+
+ ciroot= TOT_VAL TOT_VAL 1
+
+ lumorb
+
+ rlxroot
+ CUR_VAL
+END OF INPUT
+
+&ALASKA
+ pnew
+END OF INPUT
+
+&MCKINLEY
+ Perturbation
+ Hessian
+ SHOWHessian
+END OF INPUT
+EOF
+cat > MOLCAS_END_6 << EOF
+END OF INPUT
+
+&SEWARD
+ DoAnalytical
+END OF INPUT
+
+&SCF
+END OF INPUT
+
+&RASSCF
+ title
+ cas64_mono
+
+ nactel
+ 6 0 0
+
+ inactive
+ 23
+
+ ras2
+ 4
+
+ symmetry
+ 1
+
+ spin
+ 1
+
+ ciroot= TOT_VAL TOT_VAL 1
+
+ lumorb
+
+ rlxroot
+ CUR_VAL
+END OF INPUT
+
+&ALASKA
+ pnew
+END OF INPUT
+
+&MCKINLEY
+ Perturbation
+ Hessian
+ SHOWHessian
+END OF INPUT
+EOF
+funCalSglPnt_OPENMOLCAS(){
+  # usage: funCalSglPnt_MOLCAS $tot_state $current_state $inp
+  natom=`head -n 1 ${3}.xyz`
+  nline=`echo $natom + 7 | bc`
+  nbgc=`wc -l ${3}.bgc | awk '{ print $1 }'`
+  export WorkDir=`pwd`/_tmp_$3
+  mkdir $WorkDir
+  echo $WorkDir
+  # choosing ee or no-ee
+  MOLCAS_MID=MOLCAS_MID_1 # MID_1 for ee, MID_2 for no-ee
+
+  if [ $natom -eq 13 ]; then
+    MOLCAS_END=MOLCAS_END_4
+  elif [ $natom -le 10 ]; then
+    MOLCAS_END=MOLCAS_END_5
+  elif [ $natom -eq 16 ]; then
+    MOLCAS_END=MOLCAS_END_6
+  fi
+  echo $3
+  #echo ">>> EXPORT MOPLCAS_MOLDEN=ON" > ${3}.in
+  echo "&GATEWAY"            > ${3}.in
+  echo " coord"              >> ${3}.in
+  cat ${3}.xyz               >> ${3}.in
+  sed "s/NBGC_VALUE/${nbgc}/g;s/BASIS_SET_VALUE/${Basis_set_MOLCAS}/g" $MOLCAS_MID >> ${3}.in
+  if [ "$MOLCAS_MID" == "MOLCAS_MID_1" ]
+  then # ee, we need to add the background charges into the input file.
+    cat ${3}.bgc                                                                    >> ${3}.in
+  fi
+  sed "s/TOT_VAL/${1}/g;s/CUR_VAL/${2}/g;s/GUESSORB/guess${3}.RasOrb/g"   $MOLCAS_END >> ${3}.in
+  # run molcas
+  #if [ ! -f ${3}.log ];then
+    pymolcas ${3}.in -f
+  #fi
+  #grep "Happy landing" ${3}.log > /dev/null
+  #while [ "$?" -ne 0 ]
+  #do
+  #   echo "  sp calculation of $3 is not correctly finished"
+  #   pymolcas ${3}.in -f
+  #   grep "Happy landing" ${3}.log > /dev/null
+  #done
+  tmp_ene=`grep "RASSCF root number" ${3}.log | sed -n "${2}p" | awk '{ print $8 }'`
+  #chg_ene=`grep "External Field Potential Energy" ${3}.log | tail -n 1 | awk '{ print $5 }'` # MOLCAS do not need this energy.
+  echo ${tmp_ene} > ${3}.ene
+  grep -A$nline "Molecular gradients" ${3}.log | tail -n $natom | awk '{ printf "%16.9f%16.9f%16.9f\n",$2,$3,$4 }' > ${3}.grad
+  if [ "$MOLCAS_MID" == "MOLCAS_MID_1" ]
+  then
+    ./IO_Data_mlebf.py ${3}.slapaf.h5 hess
+  fi
+  mv $WorkDir/*rasscf.molden* .
+  mv $WorkDir/*RasOrb* .
+  rm -rf $WorkDir
+}

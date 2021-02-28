@@ -1,0 +1,231 @@
+#! /bin/bash
+####################################################
+####################################################
+###                                              ###
+### This is the shell script for mbe calculation ###
+###            written by Chen, Wen-Kai          ###
+###                                              ###
+###    This script if suitable for MBE_driver    ###
+###           Package written by Wen-Kai         ###
+###                                              ###
+###                 ATTENTION!!!                 ###
+###         THIS IS NOT A BLACK BOX!!!           ###
+###  MAKE SURE THAT YOU KNOW WHAT YOU ARE DOING  ###
+###                                              ###
+####################################################
+####################################################
+
+##############  DP_MDNN #####################
+cat > template1_m.json << EOF
+{
+    "conf_file":    "conf.gro",
+    "conf_format":  "gro",
+    "graph_file":   "monomer.pb",
+    "nsteps":             1,
+    "dt":       5e-10,
+    "ener_freq":     1,
+    "ener_file":    "energy.out",
+    "xtc_freq":      1,
+    "xtc_file":     "traj.xtc",
+    "trr_freq":      1,
+    "trr_file":     "traj.trr",
+    "print_force":  true,
+    "T":         10,
+    "tau_T":        0.1,
+    "rand_seed":    2017,
+    "atom_type" : {
+    "O1":       0,
+    "H2":       1,
+    "H3":       1
+    },
+    "atom_mass" : {
+    "O1":      16,
+    "H2":       1,
+    "H3":       1
+    }
+}
+EOF
+cat > template1_dd.json << EOF
+{
+    "conf_file":    "conf.gro",
+    "conf_format":  "gro",
+    "graph_file":   "deltaDimer.pb",
+    "nsteps":             1,
+    "dt":       5e-10,
+    "ener_freq":     1,
+    "ener_file":    "energy.out",
+    "xtc_freq":      1,
+    "xtc_file":     "traj.xtc",
+    "trr_freq":      1,
+    "trr_file":     "traj.trr",
+    "print_force":  true,
+    "T":         10,
+    "tau_T":        0.1,
+    "rand_seed":    2017,
+    "atom_type" : {
+    "O1":       0,
+    "H2":       1,
+    "H3":       1,
+    "O4":       0,
+    "H5":       1,
+    "H6":       1
+    },
+    "atom_mass" : {
+    "O1":      16,
+    "H2":       1,
+    "H3":       1,
+    "O4":      16,
+    "H5":       1,
+    "H6":       1
+    }
+}
+EOF
+cat > template1_dt.json << EOF
+{
+    "conf_file":    "conf.gro",
+    "conf_format":  "gro",
+    "graph_file":   "deltaTrimer.pb",
+    "nsteps":             1,
+    "dt":       5e-10,
+    "ener_freq":     1,
+    "ener_file":    "energy.out",
+    "xtc_freq":      1,
+    "xtc_file":     "traj.xtc",
+    "trr_freq":      1,
+    "trr_file":     "traj.trr",
+    "print_force":  true,
+    "T":         10,
+    "tau_T":        0.1,
+    "rand_seed":    2017,
+    "atom_type" : {
+    "O1":       0,
+    "H2":       1,
+    "H3":       1,
+    "O4":       0,
+    "H5":       1,
+    "H6":       1,
+    "O7":       0,
+    "H8":       1,
+    "H9":       1
+    },
+    "atom_mass" : {
+    "O1":      16,
+    "H2":       1,
+    "H3":       1,
+    "O4":      16,
+    "H5":       1,
+    "H6":       1,
+    "O7":      16,
+    "H8":       1,
+    "H9":       1
+    }
+}
+EOF
+cat > dp_mdnn_sp.py << EOF
+#! /usr/bin/env python3
+import numpy as np
+import os
+
+class Zhu_Naka_Dynamics:
+    def __init__(self,inp_dict):
+        self.inp_dict = inp_dict
+    def get_energy(self):
+        """
+        the energy.out look like this:
+        #        time         Kinetic       Potential           E_tot     Temperature        Pressure             Vxx             Vyy             Vzz
+       0.0000        0.000000        4.889203        4.889203        0.000000       84.110285       -0.702777       -0.788776       -1.884694
+       0.0000        0.000000        4.889203        4.889203        0.000014       84.110286       -0.702777       -0.788776       -1.884694
+        :return:
+        """
+        with open('energy.out', 'r') as f:
+            lines = f.readlines()
+        ene = float(lines[1].split()[2])
+        return ene
+    def get_force(self):
+        with open('force.out', 'r') as f:
+            force = f.readline().split()
+        force = np.array(force,dtype=np.float64)
+        return force
+    def form_gro_file(self,coord,element):
+        co = coord/10
+        natom = len(element)
+        with open('conf.gro', 'w') as f:
+            f.write('MD_for_nn wenkai , t= 0.0\n')
+            f.write('    {}\n'.format(natom))
+            for i in range(natom):
+                f.write('{rsdnum:>5d}{rsdnm:<5s}{atmnm:>5s}{atmnum:>5d}'
+                        '{crd_x:>12.6f}{crd_y:>12.6f}{crd_z:>12.6f}'
+                        '{vel_x:>8.4f}{vel_y:>8.4f}{vel_z:>8.4f}\n'.format(rsdnum=1, rsdnm='TEST', atmnm='{ele}{index}'.format(ele=element[i],index=i+1), atmnum=i+1,
+                                                                         crd_x=co[i, 0], crd_y=co[i, 1], crd_z=co[i, 2],
+                                                                         vel_x=0.0, vel_y=0.0, vel_z=0.0
+                                                                         ))
+            f.write('{box:>10.5f}{box:>10.5f}{box:>10.5f}\n'.format(box=8.0))
+    def get_coord(self,crd_file):
+        with open(crd_file, 'r') as f:
+            lines = iter(f.readlines())
+        natoms = int(next(lines))
+        next(lines)
+        coord = []
+        element=[]
+        for i in range(natoms):
+            line = next(lines).split()
+            coord.append(line[1:])
+            element.append(line[0])
+        coord = np.array(coord, dtype=float)
+        return coord, element
+    def run(self,jsonfile='sp.json'):
+        coord,element = self.get_coord(crd_file=self.inp_dict['crd_file'])
+        self.form_gro_file(coord=coord,element=element)
+        os.system('dp_mdnn  {jsonfile}'.format(jsonfile=jsonfile))
+        ene = self.get_energy() # eV
+        force = self.get_force().reshape([-1,3]) # eV/A
+        grad =-1* force
+        # unit transfer
+        ev2hartree = 3.674932E-2
+        angstorm2bohr = 1.889726
+        ene = ene * ev2hartree
+        grad = grad * ev2hartree/angstorm2bohr
+        with open(self.inp_dict['ene_file'], 'w') as f:
+            f.write('{:15.8f}\n'.format(ene))
+        np.savetxt(fname= self.inp_dict['grad_file'],X=grad,fmt='%15.8f')
+        np.savetxt(fname= self.inp_dict['force_file'],X=force,fmt='%15.5f')
+
+
+if __name__ == '__main__':
+    inp_dict = {'crd_file':'coord.xyz',
+                'ene_file':'ene',
+                'grad_file':'grad',
+                'force_file':'force'
+                }
+    dyn = Zhu_Naka_Dynamics(inp_dict=inp_dict)
+    dyn.run()
+EOF
+funCalSglPntDpMdnn(){
+  # usage: funCalSglPntDpSp $inp
+  natom=`head -n 1 ${1}.xyz`
+  export WorkDir=`pwd`/_tmp_$1
+  mkdir $WorkDir
+  cd $WorkDir
+    if [ $natom -eq 3 ]; then
+      json_file_prefix=template1_m
+      model_file_prefix=monomer
+    elif [ $natom -eq 6 ]; then
+      json_file_prefix=template1_dd
+      model_file_prefix=deltaDimer
+    elif [ $natom -eq 9 ]; then
+      json_file_prefix=template1_dt
+      model_file_prefix=deltaTrimer
+    fi
+    cp ../${json_file_prefix}.json ./sp.json     &
+    ln -s ../${model_file_prefix}.pb ./   &
+    ln -s ../${1}.xyz ./coord.xyz         &
+    ln -s ../dp_mdnn_sp.py ./             &
+    wait
+    python3 dp_mdnn_sp.py > ../${1}.log
+    cp ene ../${1}.ene                    &
+    cp grad ../${1}.grad                  &
+    cp force ../${1}.force                &
+    wait
+  cd ..
+  rm -r $WorkDir
+}

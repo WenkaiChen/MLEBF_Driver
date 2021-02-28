@@ -1,0 +1,54 @@
+#! /bin/bash
+####################################################
+####################################################
+###                                              ###
+### This is the shell script for mbe calculation ###
+###            written by Chen, Wen-Kai          ###
+###                                              ###
+###    This script if suitable for MBE_driver    ###
+###           Package written by Wen-Kai         ###
+###                                              ###
+###                 ATTENTION!!!                 ###
+###         THIS IS NOT A BLACK BOX!!!           ###
+###  MAKE SURE THAT YOU KNOW WHAT YOU ARE DOING  ###
+###                                              ###
+####################################################
+####################################################
+
+# In this function, You need to prepare all needed EANN files
+# put it into a independent folder. Such as monomer_template/ dimer_template/ trimer/template
+# Files in template folder:
+# 1. nn.exe -- excutalbe file for doing the single point EANN calculation
+# 2. atom -- recording the elements of the system
+# 3. cell -- recording the latice vectors.
+# 4. input -- the input file for training the EANN model
+# 5. scalfactor_* weight_wave_* W_*1 -- EANN paramters files.
+
+funCalSglPnt_EANN(){
+  # usage: funCalSglPnt_EANN $inp
+  natom=`head -n 1 ${1}.xyz`
+  nline=`echo $natom + 2 | bc`
+  export WorkDir=`pwd`/_tmp_$1
+  mkdir $WorkDir
+  # now be careful about which kind of folder you use.
+  if [ $natom -eq 3 ]; then
+    folder=monomer_template
+  elif [ $natom -eq 6 ]; then
+    folder=dimer_template
+  elif [ $natom -eq 9 ]; then
+    folder=trimer_template
+  fi
+  echo ${1}
+  cp ${folder}/* ${WorkDir}
+  cd ${WorkDir}
+    export OMP_NUM_THREADS=1
+    export OMP_STACKSIZE=100000
+    ../IO_Data_mlebf.py ../${1}.xyz EANN_1
+    ./nn.exe
+    mv energy ../${1}.ene
+    sed '1d' force > ../${1}.force
+    #sed '1d' hess > ../${1}.hess
+  cd ..
+  python3 -c "import numpy as np; np.savetxt('${1}.grad',X=-1*np.loadtxt('${1}.force'),fmt='%18.9f'); np.savetxt('${1}.hess',X=np.loadtxt('${WorkDir}/hess',skiprows=1)/97.1736059917226, fmt='%18.9f')"
+  rm -rf $WorkDir
+}

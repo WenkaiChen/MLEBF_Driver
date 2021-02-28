@@ -1,0 +1,276 @@
+#! /bin/bash
+####################################################
+####################################################
+###                                              ###
+### This is the shell script for mbe calculation ###
+###            written by Chen, Wen-Kai          ###
+###                                              ###
+###    This script if suitable for MBE_driver    ###
+###           Package written by Wen-Kai         ###
+###                                              ###
+###                 ATTENTION!!!                 ###
+###         THIS IS NOT A BLACK BOX!!!           ###
+###  MAKE SURE THAT YOU KNOW WHAT YOU ARE DOING  ###
+###                                              ###
+####################################################
+####################################################
+
+
+# ENVIROMENT VARIABLES for some Quantum Chemistry Packages
+# Gaussian 16
+QM_Method1=CAS
+QM_Method2=B3LYP
+EX_QM_Method=TD\(Nstates=5,root=1\)
+Basis_set=6-31+G**
+Basis_set_MOLCAS=631PGSS
+
+## EXTERNAL PROGRAM :: GAUSSIAN16
+export g16root="/usr/local"
+#export WorkDir=`pwd`
+export GAUSS_SCRDIR=`pwd`
+source $g16root/g16/bsd/g16.profile
+
+cat > Gaussian_HEAD_1 << EOF # no-ee, energy and gradient
+%nproc=1
+%mem=1GB
+#P ${QM_Method2}/${Basis_set} FORCE nosymm scfcyc=400 5D
+
+MBE sp calculation gen by wenkai
+
+EOF
+
+cat > Gaussian_TAIL_1 << EOF
+
+
+
+
+EOF
+
+cat > Gaussian_HEAD_2 << EOF # ee, energy and gradient
+%nproc=1
+%mem=1GB
+#P ${QM_Method2}/${Basis_set} FORCE nosymm scfcyc=400 CHARGE 5D
+
+MBE sp calculation gen by wenkai
+
+EOF
+
+cat > Gaussian_TAIL_2 << EOF
+
+
+
+
+
+EOF
+
+cat > Gaussian_HEAD_3 << EOF # casscf, useless, we are using molcas/openmolcas for casscf calculations, or we use it to debug
+%nproc=1
+%chk=VALUE.chk
+%mem=1GB
+#P ${QM_Method1}(4,3,nroot=2)/${Basis_set} FORCE nosymm scfcyc=400 guess=read
+
+MBE sp calculation gen by wenkai
+
+EOF
+
+cat > Gaussian_TAIL_3 << EOF
+
+
+
+
+
+EOF
+
+cat > Gaussian_HEAD_4 << EOF # no-ee, energy and gradient as well as hessian
+%nproc=1
+%mem=1GB
+%chk=VALUE.chk
+#P ${QM_Method2}/${Basis_set} FREQ nosymm scfcyc=400 5D
+
+MBE sp calculation gen by wenkai
+
+EOF
+
+cat > Gaussian_TAIL_4 << EOF
+
+
+
+
+
+EOF
+
+cat > Gaussian_HEAD_5 << EOF  # ee, energy and gradient as well as hessian
+%nproc=1
+%mem=1GB
+%chk=VALUE.chk
+#P ${QM_Method2}/${Basis_set} FREQ nosymm scfcyc=400 5D CHARGE
+
+MBE sp calculation gen by wenkai
+
+EOF
+
+cat > Gaussian_TAIL_5 << EOF
+
+
+
+
+
+EOF
+
+cat > Gaussian_HEAD_6 << EOF # casscf, useless, we are using molcas/openmolcas for casscf calculations, or we use it to debug
+%nproc=1
+%chk=VALUE.chk
+%mem=1GB
+#P ${QM_Method1}(6,4)/${Basis_set} FREQ nosymm scfcyc=400 CHARGE
+
+MBE sp calculation gen by wenkai
+
+EOF
+
+cat > Gaussian_TAIL_6 << EOF
+
+
+
+
+
+EOF
+
+cat > Gaussian_HEAD_7 << EOF # casscf, useless, we are using molcas/openmolcas for casscf calculations, or we use it to debug
+%nproc=1
+%chk=VALUE.chk
+%mem=1GB
+#P ${QM_Method1}(4,3)/${Basis_set} FREQ nosymm scfcyc=400 read=guess
+
+MBE sp calculation gen by wenkai
+
+EOF
+
+cat > Gaussian_TAIL_7 << EOF
+
+
+
+
+
+EOF
+
+cat > Gaussian_HEAD_8 << EOF # no-ee, energy and gradient, and hessian, TD-DFT
+%nproc=1
+%chk=VALUE.chk
+%mem=2GB
+#P ${QM_Method2}/${Basis_set} FORCE nosymm scfcyc=400 5D TD guess=read EmpiricalDispersion=GD3
+
+MBE sp calculation gen by wenkai
+
+EOF
+
+cat > Gaussian_TAIL_8 << EOF
+
+
+
+
+EOF
+
+cat > Gaussian_HEAD_9 << EOF # ee, energy and gradient, and hessian, TD-DFT
+%nproc=1
+%chk=VALUE.chk
+%mem=2GB
+#P ${QM_Method2}/${Basis_set} FORCE nosymm scfcyc=400 CHARGE 5D TD guess=read EmpiricalDispersion=GD3
+
+MBE sp calculation gen by wenkai
+
+EOF
+
+cat > Gaussian_TAIL_9 << EOF
+
+
+
+
+
+EOF
+
+funCalSglPnt_Gauss(){
+  # usage:: funCalSglPnt_Gauss $inp
+  natom=`head -n 1 ${1}.xyz`
+  nline=`echo $natom + 2 | bc`
+  export WorkDir=`pwd`/_tmp_$1
+  mkdir $WorkDir
+  # now be careful about which kind of Gaussian_HEAD and Gaussian_TAIL file you choose.
+  if [ $natom -gt 10 ]; then
+    Gaussian_HEAD=Gaussian_HEAD_3
+    Gaussian_TAIL=Gaussian_TAIL_3
+    QM_Method=$QM_Method1
+  elif [ $natom -eq 10 ]; then
+    Gaussian_HEAD=Gaussian_HEAD_1
+    Gaussian_TAIL=Gaussian_TAIL_1
+    QM_Method=$QM_Method2
+  else
+    Gaussian_HEAD=Gaussian_HEAD_4
+    Gaussian_TAIL=Gaussian_TAIL_4
+    QM_Method=$QM_Method2
+  fi
+  #echo Using ${QM_Method} method of Gaussian16...
+  echo ${1}
+  sed "s/VALUE/${1}/g" $Gaussian_HEAD  >  ${1}.in
+  echo "0 1 "         >> ${1}.in
+  sed '1,2d' ${1}.xyz >> ${1}.in
+  echo                >> ${1}.in
+  if [ "$Gaussian_HEAD" == "Gaussian_HEAD_2" ] || [ "$Gaussian_HEAD" == "Gaussian_HEAD_5" ] || [ "$Gaussian_HEAD" == "Gaussian_HEAD_6" ] || [ "$Gaussian_HEAD" == "Gaussian_HEAD_9" ] # ee or no-ee
+  then # ee, need to write coordinates of background charges
+    cat ${1}.bgc        >> ${1}.in
+  fi
+  cat $Gaussian_TAIL  >> ${1}.in
+  ### run sp calculation
+  $g16root/g16/g16 < ${1}.in > ${1}.log
+  grep "Normal termination of Gaussian" ${1}.log > /dev/null
+  while [ "$?" -ne 0 ]
+  do
+     echo "  sp calculation of $1 is not correctly finished"
+     $g16root/g16/g16 < ${1}.in > ${1}.log
+     grep "Normal termination of Gaussian" ${1}.log > /dev/null
+  done
+  ### deal with log file, extract energy and gradient/force information
+#  if [ $natom -le 6 ]; then
+    if [ ${QM_Method} = HF ]; then
+      tmp_ene=`grep "SCF Done" ${1}.log | awk '{ print $5 }'`  #HF
+    elif [ ${QM_Method} = MP2 ]; then
+      tmp_ene=`grep "EUMP2" ${1}.log | tail -n 1 | awk '{ printf $6 }' | sed 's/D/e/g' | xargs`  #MP2
+    elif [ ${QM_Method} = CCSD ]; then
+      tmp_ene=`grep "Wavefunction amplitudes converged. E(Corr)=" ${1}.log  | awk '{print $5}'` #CCSD
+    elif [ ${QM_Method} = B3LYP ]; then
+      tmp_ene=`grep "SCF Done" ${1}.log | awk '{ print $5 }'`  #B3LYP
+    elif [ ${QM_Method} = CAS ]; then
+      tmp_ene=`grep -B1 " ... Do an extra-iteration for final printing." ${1}.log | head -n 1 | awk '{ print substr($0,22,18) }'`
+    fi
+    if [ "$Gaussian_HEAD" == "Gaussian_HEAD_8" ] || [ "$Gaussian_HEAD" == "Gaussian_HEAD_9" ]
+    then # TD-DFT
+      if [ ${QM_Method} = B3LYP ]; then
+        tmp_ene=`grep "Total Energy" ${1}.log | awk '{ print $5 }'` # TD-B3LYP
+      fi
+    fi
+#  else # excited states calculation
+#    if [ ${Method} = B3LYP ]; then
+#      tmp_ene=`grep "Total Energy" ${1}.log | awk '{ print $5 }'` # TD-B3LYP
+#    fi
+#  fi
+  if [ "$Gaussian_HEAD" == "Gaussian_HEAD_2" ] || [ "$Gaussian_HEAD" == "Gaussian_HEAD_5" ] || [ "$Gaussian_HEAD" == "Gaussian_HEAD_6" ] || [ "$Gaussian_HEAD" == "Gaussian_HEAD_9" ] # ee or no-ee
+  then # ee, need to read the energy of charges.
+    chg_ene=`grep "Self energy of the charges" ${1}.log | awk '{print $7}'`
+    python -c "print('{ene:22.11f}'.format(ene=(${tmp_ene} - ${chg_ene}0)))" > ${1}.ene
+  else # no-ee, tmp_ene is the energy of ${1}.ene
+    echo ${tmp_ene} > ${1}.ene
+  fi
+  grep -A$nline "Forces (Hartrees/Bohr)" ${1}.log | tail -n $natom | awk '{ printf "%16.9f%16.9f%16.9f\n",$3,$4,$5 }' > ${1}.force
+  python3 -c "import numpy as np; np.savetxt('${1}.grad',X=-1*np.loadtxt('${1}.force'),fmt='%18.9f')"
+  if [ "$Gaussian_HEAD" == "Gaussian_HEAD_4" ] || [ "$Gaussian_HEAD" == "Gaussian_HEAD_5" ] || [ "$Gaussian_HEAD" == "Gaussian_HEAD_6" ] || [ "$Gaussian_HEAD" == "Gaussian_HEAD_7" ] || [ "$Gaussian_HEAD" == "Gaussian_HEAD_9" ] # hessian or not
+  then # needs hessian
+    cd ${WorkDir}
+      mv ../${1}.chk .
+      $g16root/g16/formchk ${1}.chk
+      ../IO_Data_mlebf.py ${1}.fchk hessian
+      mv ${1}.hess ..
+      mv ${1}.chk ..
+      mv ${1}.fchk ..
+    cd ..
+  fi
+  rm -rf $WorkDir
+}

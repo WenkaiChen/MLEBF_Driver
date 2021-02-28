@@ -1,0 +1,387 @@
+#! /bin/bash
+####################################################
+####################################################
+###                                              ###
+### This is the shell script for mbe calculation ###
+###            written by Chen, Wen-Kai          ###
+###                                              ###
+###    This script if suitable for MBE_driver    ###
+###           Package written by Wen-Kai         ###
+###                                              ###
+###                 ATTENTION!!!                 ###
+###         THIS IS NOT A BLACK BOX!!!           ###
+###  MAKE SURE THAT YOU KNOW WHAT YOU ARE DOING  ###
+###                                              ###
+####################################################
+####################################################
+
+## ./MBE_Driver -i coord.xyz -c coord.crdchg -r 0.5
+
+QM_Method1=CAS
+QM_Method2=B3LYP
+EX_QM_Method=TD\(Nstates=5,root=1\)
+Basis_set=6-31+G**
+Basis_set_MOLCAS=631pGss
+
+## EXTERNAL PROGRAM :: GAUSSIAN16
+export g16root="/usr/local"
+#export WorkDir=`pwd`
+export GAUSS_SCRDIR=`pwd`
+source $g16root/g16/bsd/g16.profile
+## EXTERNAL PROGRAM :: 
+export MOLCAS=/usr/local/molcas80
+export CPUS=1
+export MOLCASMEM=1600MB
+export MOLCAS_MOLDEN=ON
+export MOLCASDISK=3000MB
+export PATH=/usr/local/bin:$PATH
+
+cat > Gaussian_HEAD_1 << EOF
+%nproc=1
+%mem=1GB
+#P ${QM_Method2}/${Basis_set} CHARGE FORCE nosymm scfcyc=400 5D
+
+MBE sp calculation gen by wenkai 
+
+EOF
+
+cat > Gaussian_HEAD_2 << EOF
+%nproc=1
+%mem=1GB
+#P ${QM_Method2}/${Basis_set} CHARGE FORCE nosymm scfcyc=400 5D 
+
+MBE sp calculation gen by wenkai 
+
+EOF
+
+cat > Gaussian_HEAD_3 << EOF
+%nproc=1
+%chk=VALUE.chk
+%mem=1GB
+#P ${QM_Method1}(4,3,nroot=2)/${Basis_set} CHARGE FORCE nosymm scfcyc=400 guess=read 
+
+MBE sp calculation gen by wenkai
+
+EOF
+
+cat > Gaussian_TAIL_1 << EOF
+
+
+
+
+EOF
+
+cat > Gaussian_TAIL_2 << EOF
+
+
+
+
+
+EOF
+
+cat > Gaussian_TAIL_3 << EOF
+
+
+
+
+
+EOF
+Method=$(echo   $QM_Method   |   tr   [a-z]   [A-Z])
+## LIST ALL MONOMER AND DIMER PREFIX
+funCalSglPnt_Gauss(){
+  # usage:: funCalSglPnt_Gauss $inp
+  natom=`head -n 1 ${1}.xyz`
+  nline=`echo $natom + 2 | bc`
+  export WorkDir=`pwd`/_tmp_$1
+  mkdir $WorkDir
+  if [ $natom -gt 6 ]; then
+    Gaussian_HEAD=Gaussian_HEAD_3
+    Gaussian_TAIL=Gaussian_TAIL_3
+    QM_Method=$QM_Method1
+  elif [ $natom -eq 6 ]; then
+    Gaussian_HEAD=Gaussian_HEAD_1
+    Gaussian_TAIL=Gaussian_TAIL_1
+    QM_Method=$QM_Method2
+  else
+    Gaussian_HEAD=Gaussian_HEAD_2
+    Gaussian_TAIL=Gaussian_TAIL_2 
+    QM_Method=$QM_Method2
+  fi
+  #echo Using ${QM_Method} method of Gaussian16...
+  echo ${1}
+  sed "s/VALUE/${1}/g" $Gaussian_HEAD  >  ${1}.in
+  sed '1d' ${1}.xyz >> ${1}.in
+  echo                >> ${1}.in 
+  cat ${1}.bgc      >> ${1}.in
+  cat $Gaussian_TAIL  >> ${1}.in
+  ### run sp calculation
+  $g16root/g16/g16 < ${1}.in > ${1}.log 
+  grep "Normal termination of Gaussian" ${1}.log > /dev/null 
+  while [ "$?" -ne 0 ]
+  do
+     echo "  sp calculation of $1 is not correctly finished"
+     $g16root/g16/g16 < ${1}.in > ${1}.log
+     grep "Normal termination of Gaussian" ${1}.log > /dev/null
+  done
+  ### deal with log file, extract energy and gradient/force information
+#  if [ $natom -le 6 ]; then
+    if [ ${QM_Method} = HF ]; then
+      tmp_ene=`grep "SCF Done" ${1}.log | awk '{ print $5 }'`  #HF
+    elif [ ${QM_Method} = MP2 ]; then
+      tmp_ene=`grep "EUMP2" ${1}.log | awk '{ printf $6 }' | sed 's/D/e/g'`  #MP2
+    elif [ ${QM_Method} = CCSD ]; then
+      tmp_ene=`grep "Wavefunction amplitudes converged. E(Corr)=" ${1}.log  | awk '{print $5}'` #CCSD
+    elif [ ${QM_Method} = B3LYP ]; then
+      tmp_ene=`grep "SCF Done" ${1}.log | awk '{ print $5 }'`  #B3LYP
+    elif [ ${QM_Method} = CAS ]; then
+      tmp_ene=`grep -B1 " ... Do an extra-iteration for final printing." ${1}.log | head -n 1 | awk '{ print substr($0,22,18) }'` 
+    fi
+#  else # excited states calculation
+#    if [ ${Method} = B3LYP ]; then
+#      tmp_ene=`grep "Total Energy" ${1}.log | awk '{ print $5 }'` # TD-B3LYP
+#    fi
+#  fi
+  chg_ene=`grep "Self energy of the charges" ${1}.log | awk '{print $7}'` 
+  echo ${tmp_ene} - ${chg_ene}0 | bc > ${1}.ene 
+  grep -A$nline "Forces (Hartrees/Bohr)" ${1}.log | tail -n $natom | awk '{ printf "%16.9f%16.9f%16.9f\n",$3,$4,$5 }' > ${1}.force
+  python3 -c "import numpy as np; np.savetxt('${1}.grad',X=-1*np.loadtxt('${1}.force'))" 
+  rm -rf $WorkDir
+}
+
+
+
+
+##############  DPSP ########################
+funCalSglPntDpSp(){
+  # usage: funCalSglPntDpSp $inp
+  natom=`head -n 1 ${1}.xyz`
+  sed "s/NAME/$1/g" template2.json > ${1}.json
+  if [ $natom -eq 3 ]; then
+    sed -i "s/GRAPHNM/\.\.\/\.\.\/models\/monomer_wat\/nn2\/graph\.pb/g" ${1}.json
+    sed -i "s/NUM_BGC/49/g" ${1}.json
+  elif [ $natom -eq 10 ]; then
+    sed -i "s/GRAPHNM/\.\.\/\.\.\/models\/monomer_ace\/nn2\/graph\.pb/g" ${1}.json
+    sed -i "s/NUM_BGC/42/g" ${1}.json
+  elif [ $natom -eq 13 ]; then
+    sed -i "s/GRAPHNM/\.\.\/\.\.\/models\/dimer_ace\/nn2\/graph\.pb/g" ${1}.json
+    sed -i "s/NUM_BGC/39/g" ${1}.json
+  elif [ $natom -eq 6 ]; then
+    sed -i "s/GRAPHNM/\.\.\/\.\.\/models\/dimer_wat\/nn2\/graph\.pb/g" ${1}.json
+    sed -i "s/NUM_BGC/46/g" ${1}.json
+  fi    
+  dp_sp ${1}.json 2>/dev/null
+  if [ $? != 0 ]; then
+    echo "  sp calculation of $1 is not correctly finished"
+    exit 1
+  fi    
+  python3 -c "import numpy as np; np.savetxt('{}.grad'.format('$1'), X=-1*np.loadtxt('{}.for'.format('$1')).reshape([-1,3]))"
+}
+
+
+############## MNDO #######################
+cat > Mndo_HEAD_1 << EOF
+kharge=0 iop=-6    imult=1 iuhf=-1 +
+iscf=11 iplscf=11 icuts=-1 icutg=-1 dstep=0.00001 kitscf=4000 +
+igeom=1 iform=1 nsav15=4 ipubo=1 jop=-2 +
+mminp=2 mmcoup=2 mmlink=2 nlink=0 numatm=VALUE1 +
+ kci=5 ici1=3 ici2=1 ioutci=1 movo=0 nciref=3 mciref=0 +
+  levexc=2 iroot=VALUE2 lroot=VALUE3 ncisym=-1 imomap=0
+test background charge
+
+EOF
+
+cat > Mndo_TAIL << EOF
+0        0.000000000 0     0.000000000 0     0.000000000 0
+EOF
+
+funCalSglPnt_MNDO(){
+  # usage: funCalSglPnt_MNDO $tot_state $current_state $inp
+  natom=`head -n 1 ${3}.xyz`
+  nline=`echo $natom + 2 | bc`
+  nbgc=`wc -l ${3}.bgc | awk '{ print $1 }'`
+  echo ${3}
+  if [ $natom -gt $eatoms ]; then
+    sed "s/VALUE1/${nbgc}/g;s/VALUE2/$1/g;s/VALUE3/$2/g" Mndo_HEAD_1    > ${3}.in
+  else
+    sed "s/VALUE1/${nbgc}/g;s/VALUE2/1/g;s/VALUE3/1/g" Mndo_HEAD_1      > ${3}.in
+  fi
+  awk 'BEGIN{ss="H,He,Li,Be,B,C,N,O,F,Ne,Na,Mg,Al,Si,P,S,Cl,Ar,K,Ca,Sc,Ti,V,Cr,Mn,Fe,Co,Ni,Cu,Zn,Ga,Ge,As,Se,Br,Kr,Rb,Sr,Y,Zr,Nb,Mo,Tc,Ru,Rh,Pd,Ag,Cd,In,Sn,Sb,Te,I,Xe,Cs,Ba,La,Ce,Pr,Nd,Pm,Sm,Eu,Gd,Tb,Dy,Ho,Er,Tm,Yb,Lu,Hf,Ta,W,Re,Os,Ir,Pt,Au,Hg,Tl,Pb,Bi,Po,At,Rn,Fr,Ra,Ac,Th,Pa,U,Np,Pu,Am,Cm,Bk,Cf,Es,Fm,Md,No,Lr,Rf,Db,Sg,Bh,Hs,Mt,Ds,Rg,Cn,uut,uuq,uup,uuh,uus,uuo";split(ss,atsym,",");for(i=1;i<=118;i++){array[atsym[i]]=i};}{ if(NR>2){ print array[$1], $2, 0, $3, 0, $4, 0 }}'  ${3}.xyz                                              >> ${3}.in
+  cat Mndo_TAIL                                                    >> ${3}.in
+  cat ${3}.bgc                                                     >> ${3}.in
+  ### run sp calculation
+  $MNDO_HOME/mndo < ${3}.in > ${3}.log
+  if [ $? != 0 ]; then
+    echo "  sp calculation of $inp is not correctly finished"
+    exit 1
+  fi
+  # deal with log file, extract energy and gradient/force information
+  if [ $natom -gt $eatoms ]; then
+    sed -n "/State  ${2},/,1p" ${3}.log | gawk '{print $9}' > ${3}.ene
+  else
+    sed -n "/State  1,/,1p" ${3}.log | gawk '{print $9}' > ${3}.ene
+  fi
+  sed -n "/GRADIENTS (KCAL\/(MOL*/,+$((natom+4))p" ${3}.log | sed -e "1,4d" | gawk '{printf("%25.10lf%25.10lf%25.10lf\n",$6,$7,$8)}' | head -n $natom > ${3}.grad
+}
+
+################### MOLCAS #################
+cat > MOLCAS_MID << EOF
+
+ basis
+ BASIS_SET_VALUE
+
+ basdir=./
+
+ group
+ nosym
+
+ ricd
+
+ xfield
+ NBGC_VALUE   Angstrom
+EOF
+cat > MOLCAS_END_1 << EOF
+END OF INPUT
+
+&SEWARD
+END OF INPUT
+
+&SCF
+END OF INPUT
+
+&RASSCF
+ title
+ cas64_dim
+
+ nactel
+ 2 0 0
+
+ inactive
+ 20
+
+ ras2
+ 2
+
+ symmetry
+ 1
+
+ spin
+ 1
+
+ ciroot= TOT_VAL TOT_VAL 1
+
+ lumorb
+
+ rlxroot
+ CUR_VAL
+END OF INPUT
+
+&ALASKA
+ pnew
+END OF INPUT
+EOF
+cat > MOLCAS_END_2 << EOF
+END OF INPUT
+
+&SEWARD
+END OF INPUT
+
+&SCF
+END OF INPUT
+
+&RASSCF
+ title
+ cas64_mono
+
+ nactel
+ 2 0 0
+
+ inactive
+ 15
+
+ ras2
+ 2
+
+ symmetry
+ 1
+
+ spin
+ 1
+
+ ciroot= TOT_VAL TOT_VAL 1
+
+ lumorb
+
+ rlxroot
+ CUR_VAL
+END OF INPUT
+
+&ALASKA
+ pnew
+END OF INPUT
+EOF
+funCalSglPnt_MOLCAS(){
+  # usage: funCalSglPnt_MOLCAS $tot_state $current_state $inp
+  natom=`head -n 1 ${3}.xyz`
+  nline=`echo $natom + 7 | bc`
+  nbgc=`wc -l ${3}.bgc | awk '{ print $1 }'`
+  export WorkDir=`pwd`/_tmp_$3
+  mkdir $WorkDir
+  echo $WorkDir 
+  if [ $natom -gt 10 ]; then
+    MOLCAS_END=MOLCAS_END_1
+  else
+    MOLCAS_END=MOLCAS_END_2
+  fi
+  echo $3
+  #echo ">>> EXPORT MOPLCAS_MOLDEN=ON" > ${3}.in
+  echo "&GATEWAY"            > ${3}.in
+  echo " coord"              >> ${3}.in
+  cat ${3}.xyz               >> ${3}.in
+  sed "s/NBGC_VALUE/${nbgc}/g;s/BASIS_SET_VALUE/${Basis_set_MOLCAS}/g" MOLCAS_MID >> ${3}.in
+  cat ${3}.bgc                                                                    >> ${3}.in 
+  sed "s/TOT_VAL/${1}/g;s/CUR_VAL/${2}/g;s/GUESSORB/guess${3}.RasOrb/g"   $MOLCAS_END >> ${3}.in
+  # run molcas 
+  molcas ${3}.in -f
+  grep "Happy landing" ${3}.log > /dev/null
+  while [ "$?" -ne 0 ]
+  do
+     echo "  sp calculation of $3 is not correctly finished"
+     molcas ${3}.in -f
+     grep "Happy landing" ${3}.log > /dev/null
+  done
+  tmp_ene=`grep "RASSCF root number" ${3}.log | sed -n "${2}p" | awk '{ print $8 }'`
+  chg_ene=`grep "External Field Potential Energy" ${3}.log | tail -n 1 | awk '{ print $5 }'`
+  #echo ${tmp_ene} - ${chg_ene}0 | bc > ${3}.ene
+  echo ${tmp_ene} > ${3}.ene
+  grep -A$nline "Molecular gradients" ${3}.log | tail -n $natom | awk '{ printf "%16.9f%16.9f%16.9f\n",$2,$3,$4 }' > ${3}.grad 
+  mv $WorkDir/*rasscf.molden* .
+  mv $WorkDir/*RasOrb* .
+  rm -rf $WorkDir
+}
+for inp in `ls *.xyz | cut -d . -f 1`  # PLEASE BE CARE ABOUT FILENAMES
+do
+  natom=`head -n 1 ${inp}.xyz` 
+  if [ $natom -gt 6 ]; then
+    funCalSglPnt_MOLCAS 2 1 $inp & 
+    #sleep 5s
+  else
+    funCalSglPnt_Gauss $inp &
+  fi
+  TASKNUM=` jobs | wc | awk '{ print $1 }'`
+  if [ $TASKNUM -ge 4 ]; then
+    while true
+    do 
+      TASKNUM=` jobs | wc | awk '{ print $1 }'`
+      if [ $TASKNUM -lt 4 ]; then
+        break;
+      fi
+    done
+  fi  
+
+done
+
+wait
+rm -f Gau*
+
+exit 0
+

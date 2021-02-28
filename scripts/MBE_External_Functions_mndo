@@ -1,0 +1,61 @@
+#! /bin/bash
+####################################################
+####################################################
+###                                              ###
+### This is the shell script for mbe calculation ###
+###            written by Chen, Wen-Kai          ###
+###                                              ###
+###    This script if suitable for MBE_driver    ###
+###           Package written by Wen-Kai         ###
+###                                              ###
+###                 ATTENTION!!!                 ###
+###         THIS IS NOT A BLACK BOX!!!           ###
+###  MAKE SURE THAT YOU KNOW WHAT YOU ARE DOING  ###
+###                                              ###
+####################################################
+####################################################
+
+############## MNDO #######################
+cat > Mndo_HEAD_1 << EOF
+kharge=0 iop=-6    imult=1 iuhf=-1 +
+iscf=11 iplscf=11 icuts=-1 icutg=-1 dstep=0.00001 kitscf=4000 +
+igeom=1 iform=1 nsav15=4 ipubo=1 jop=-2 +
+mminp=2 mmcoup=2 mmlink=2 nlink=0 numatm=VALUE1 +
+ kci=5 ici1=3 ici2=1 ioutci=1 movo=0 nciref=3 mciref=0 +
+  levexc=2 iroot=VALUE2 lroot=VALUE3 ncisym=-1 imomap=0
+test background charge
+
+EOF
+
+cat > Mndo_TAIL << EOF
+0        0.000000000 0     0.000000000 0     0.000000000 0
+EOF
+
+funCalSglPnt_MNDO(){
+  # usage: funCalSglPnt_MNDO $tot_state $current_state $inp
+  natom=`head -n 1 ${3}.xyz`
+  nline=`echo $natom + 2 | bc`
+  nbgc=`wc -l ${3}.bgc | awk '{ print $1 }'`
+  echo ${3}
+  if [ $natom -gt $eatoms ]; then
+    sed "s/VALUE1/${nbgc}/g;s/VALUE2/$1/g;s/VALUE3/$2/g" Mndo_HEAD_1    > ${3}.in
+  else
+    sed "s/VALUE1/${nbgc}/g;s/VALUE2/1/g;s/VALUE3/1/g" Mndo_HEAD_1      > ${3}.in
+  fi
+  awk 'BEGIN{ss="H,He,Li,Be,B,C,N,O,F,Ne,Na,Mg,Al,Si,P,S,Cl,Ar,K,Ca,Sc,Ti,V,Cr,Mn,Fe,Co,Ni,Cu,Zn,Ga,Ge,As,Se,Br,Kr,Rb,Sr,Y,Zr,Nb,Mo,Tc,Ru,Rh,Pd,Ag,Cd,In,Sn,Sb,Te,I,Xe,Cs,Ba,La,Ce,Pr,Nd,Pm,Sm,Eu,Gd,Tb,Dy,Ho,Er,Tm,Yb,Lu,Hf,Ta,W,Re,Os,Ir,Pt,Au,Hg,Tl,Pb,Bi,Po,At,Rn,Fr,Ra,Ac,Th,Pa,U,Np,Pu,Am,Cm,Bk,Cf,Es,Fm,Md,No,Lr,Rf,Db,Sg,Bh,Hs,Mt,Ds,Rg,Cn,uut,uuq,uup,uuh,uus,uuo";split(ss,atsym,",");for(i=1;i<=118;i++){array[atsym[i]]=i};}{ if(NR>2){ print array[$1], $2, 0, $3, 0, $4, 0 }}'  ${3}.xyz                                              >> ${3}.in
+  cat Mndo_TAIL                                                    >> ${3}.in
+  cat ${3}.bgc                                                     >> ${3}.in
+  ### run sp calculation
+  $MNDO_HOME/mndo < ${3}.in > ${3}.log
+  if [ $? != 0 ]; then
+    echo "  sp calculation of $inp is not correctly finished"
+    exit 1
+  fi
+  # deal with log file, extract energy and gradient/force information
+  if [ $natom -gt $eatoms ]; then
+    sed -n "/State  ${2},/,1p" ${3}.log | gawk '{print $9}' > ${3}.ene
+  else
+    sed -n "/State  1,/,1p" ${3}.log | gawk '{print $9}' > ${3}.ene
+  fi
+  sed -n "/GRADIENTS (KCAL\/(MOL*/,+$((natom+4))p" ${3}.log | sed -e "1,4d" | gawk '{printf("%25.10lf%25.10lf%25.10lf\n",$6,$7,$8)}' | head -n $natom > ${3}.grad
+}

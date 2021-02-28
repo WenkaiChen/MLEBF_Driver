@@ -1,0 +1,80 @@
+#! /bin/bash
+
+export BAGEL_NUM_THREADS=1
+export MKL_NUM_THREADS=1
+export PATH=/opt/bagel-2.1.1/obj/bin:$PATH
+
+cat > BAGEL_HEAD << EOF
+{"bagel" : [
+
+ {
+   "title" : "molecule",
+   "basis" : "cc-pvdz",
+   "df_basis" : "cc-pvdz-jkfit",
+   "angstrom" : true,
+   "geometry" : [
+EOF
+
+cat > BAGEL_TAIL << EOF
+   ]
+ },
+{
+  "title" : "hf"
+},
+
+{
+  "title" : "casscf",
+  "nstate" : 2,
+  "nclosed" : 18,
+  "nact" : 6,
+  "active" : [17, 20, 21, 22, 23, 30]
+},
+
+{
+ "title" : "forces",
+ "grads" : [
+   { "title" : "force", "target" : 0 },
+   { "title" : "force", "target" : 1 },
+   { "title" : "nacme", "target" : 0, "target2" : 1, "nacmtype" : "interstate" }
+ ],
+ "method" : [ {
+   "title" : "caspt2",
+   "maxiter": 300,
+   "smith" : {
+     "method" : "caspt2",
+     "maxiter": 300,
+     "ms" : "true",
+     "xms" : "true",
+     "sssr" : "true",
+     "shift" : 0.2,
+     "frozen" : true
+   },
+   "nstate" : 2,
+   "nact" : 2,
+   "nclosed" : 7
+ } ],
+ "export" : true
+},
+{
+    "title" : "save_ref",
+    "file" : "./fileorb"
+}
+
+]}
+EOF
+
+funCalSglPnt_BAGEL() {
+  # Usage: funCalSglPnt_BAGEL $inp $interested_state
+  natom=`head -n 1 ${1}.xyz`
+  cat BAGEL_HEAD > ${1}.in
+  sed '1,2d' ${1}.xyz | awk '{printf "{ \"atom\" : \"%s\", \"xyz\" : [%14.6f,%14.6f,%14.6f ] },\n",$1,$2,$3,$4}' | head -c-2 >> ${1}.in
+  echo >> ${1}.in
+  sed "s/fileorb/${1}/g" BAGEL_TAIL >> ${1}.in
+
+  BAGEL ${1}.in > ${1}.bglog
+
+  line=`echo $2 + 1 | bc`
+  sed -n "${line}p" ENERGY.out > ${1}.ene
+  sed '1d' FORCE_${2}.out | awk '{printf "%20.10f%20.10f%20.10f\n",$2,$3,$4}' | head -n $natom > ${1}.force
+  python3 -c "import numpy as np; np.savetxt('${1}.grad',X=-1*np.loadtxt('${1}.force'),fmt='%18.9f')"
+}
