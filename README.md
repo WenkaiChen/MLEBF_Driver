@@ -1,7 +1,7 @@
 # MLEBF_Driver
 The Driver Code of Multi-Layer Energy-Based Fragment Method
 
-reference:
+Reference:
 
 (1) Chen, W.-K.; Fang, W.-H.; Cui, G.L. Phys. Chem. Chem. Phys. 2019, 21, 22695--22699. https://doi.org/10.1039/C9CP04842A.
 
